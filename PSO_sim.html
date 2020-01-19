@@ -1,0 +1,282 @@
+<html>
+    <head>
+        <script>
+            const timeStep = 50; //length of a timestep in ms
+            const c1 = 2; //scales the magnitude of movement towards personal best minimum
+            const c2 = 2; //scales the magnitude of movement towards the current global minimum 
+            var w = 0.90; //scales how much of the previous speed is conserved when calculating new velocity
+            var a = 0.02; //the rate at which the value of w reduces
+            var gb = [0, 0, Infinity]; //global best, [x-coordinate, y-coordinate, function value], the position with the lowest
+                                        //known function value amongst all the current and previous particle locations
+            const sideLength = 600;                       
+            const width = sideLength; //width of the canvas
+            const height = sideLength; //height of the canvas
+            const xValueRange = 5;
+            const yValueRange = 5;
+            const xMin = -xValueRange/2; //minimum value of the x-component of the input value
+            const xMax = xValueRange/2; //maximum value of the x-component of the input value
+            const yMin = -yValueRange/2; //minimum value of the y-component of the input value
+            const yMax = yValueRange/2; //maximum value of the y-component of the input value
+            const renderResolution = 200;
+            const xSampleSize = xValueRange/renderResolution;
+            const ySampleSize = yValueRange/renderResolution;
+            const xCanvasScale = width/xValueRange;
+            const yCanvasScale = height/yValueRange;
+
+            //Every particle has a location, velocity and a personal best (the position with the minimal function value)
+            class Particle
+            {
+                //location = location is represented as a vector with 2 components x and y [x-component, y-component] 
+                //velocity = velocity is represented as a vector with 2 components x and y [x-component, y-component]
+                //pb = the location of the particle at which the function had the lowest value so far,
+                //contains the location vector and the function value at the location [x-component, y-component, function value]
+                constructor(location, velocity, pb)
+                {
+                    this.location = location;
+                    this.velocity = velocity;
+                    this.pb = pb;
+                }
+            }
+
+            function main()
+            {  
+                var particleCount = 10; //number of particles used
+                var particles = initParticles(particleCount); //initializes the particles
+                var c = initCanvas("canvas1", width, height);
+                var ctx = c.getContext("2d");
+                visualizeFunction(c); //draws the function
+                var fImage = ctx.getImageData(0, 0, width, height);
+                
+                //runs the simulation
+                setInterval(function()
+                {
+                    clearCanvas(c);
+                    ctx.putImageData(fImage, 0, 0);
+                    updateParticles(particles); //updates the particle values
+                    visualizeParticles(c, particles); //draws the particles
+                    if(w > 0)
+                    {
+                        w -= a; //updates the velocity scaler w
+                    }
+                }, timeStep);
+                
+            }
+            
+            //returns the value of the function at a position (x, y)
+            //returns infinity if the input value is outside the input space
+            function getFunctionValue(x, y)
+            {
+                if(x < (xMin) || x > (xMax)
+                    || y < (yMin) || y > (yMax))
+                {
+                    return Infinity;
+                }
+                const pi = Math.PI;
+                //try these different functions below
+                //x*x - 10*Math.cos(2*pi*x) + y*y - 10*Math.cos(2*pi*y)
+                //x*x - y*y
+                //Math.pow(x*x + y*y, 2)
+                //(Math.sin(4*x)-Math.cos(5*y))/5
+                //Math.pow(1.5 - x + x*y, 2) + Math.pow(2.25 - x + x*y, 2) + Math.pow(2.625 - x + x*y*y*y, 2)
+                //Math.sin(x + y) + Math.pow(x - y, 2) - 1.5*x + 2.5*y + 1
+                var func = x*x - 10*Math.cos(2*pi*x) + y*y - 10*Math.cos(2*pi*y);
+                return func;
+            }
+
+            //finds the minimum and maximum values for the function by going through all the values in the input space.
+            //is used to draw the function
+            function findMinMax()
+            {
+                var fMin = Infinity;
+                var fMax = -Infinity;
+                for(var y = yMin; y <= yMax; y += ySampleSize)
+                {
+                    for(var x = xMin; x <= xMax; x += xSampleSize)
+                    {
+                        var fValue = getFunctionValue(x, y);
+                        if(fValue < fMin)
+                        {
+                            fMin = fValue;
+                        }
+                        else if(fValue > fMax)
+                        {
+                            fMax = fValue;
+                        }
+                    }
+                }
+                return [fMin, fMax];
+            }
+
+            //finds the corresponding color of a function value
+            //values closer to the minimum -> bluish
+            //values closer to the maximum -> reddish
+            //values in the middle -> yellowish
+            function getColor(fValue, fMin, fMax)
+            {
+                var range = fMax - fMin; //range of function values in the input space
+                var fValueNorm = fValue - fMin; //function value is sifted to be > 0
+                var rgbScale = 255/(range/4); //is used to scale the value to rgb value range 0-255
+
+                if(fValueNorm >= 0 && fValueNorm < range/4)
+                {  
+                    return "rgb(" + 0 + "," + fValueNorm*rgbScale + "," + 255 + ")";
+                }
+                else if(fValueNorm >= range/4 && fValueNorm < range/2)
+                {
+                    fValueNorm -= range/4;
+                    return "rgb(" + fValueNorm*rgbScale + "," + 255 + "," + (255-fValueNorm*rgbScale) + ")";
+                }
+                else
+                {
+                    fValueNorm -= range/2;
+                    rgbScale /= 2;
+                    return "rgb(" + 255 + "," + (255-fValueNorm*rgbScale) + "," + 0 + ")";
+                }
+            }
+
+            //initializes the particles with some initial values
+            function initParticles(n)
+            {
+                var particleArray = [];
+                
+                for(var i = 0; i < n; i++)
+                {
+                    var location = rndVector(xMin, xMax, yMin, yMax); //initial locations for the particles are chosen randomly
+                    var velocity = rndVector(xMin, xMax, yMin, yMax); //initial velocities are also chosen randomly
+                    var velocityScale = 10; //magnitude for the initial velocities
+                    velocity = normalizeVector(velocity[0], velocity[1]);
+                    velocity = [velocity[0]*Math.random()*velocityScale, velocity[1]*Math.random()*velocityScale];
+                    
+                    var particle = new Particle(location, velocity, [location[0], location[1], Infinity]);
+                    particleArray.push(particle);
+                }
+                return particleArray;
+            }
+
+            //updates the particle values
+            function updateParticles(particles)
+            {
+                //goes through all the particles
+                for(var p of particles)
+                {
+                    var pXLocation = p.location[0]; //current x-coordinate of the particle in the input space
+                    var pYLocation = p.location[1]; //current y-coordinate of the particle in the input space
+                    var pXVelocity = p.velocity[0]; //x-component of the current velocity
+                    var pYVelocity = p.velocity[1]; //y-component of the current velocity
+                    var pXPB = p.pb[0]; //x-coordinate of the current personal best
+                    var pYPB = p.pb[1]; //y-coordinate of the current personal best
+                    var pPBValue = p.pb[2]; //function value at the current personal best
+                    var r1 = Math.random();
+                    var r2 = Math.random();
+                    //new velocity for the particle is calculated based on the below function:
+                    //new velocity = w * current velocity + r1 * c1 * distance to personal best + r2 * c2 * distance to global best
+                    var newXVelocity = w*pXVelocity + r1*c1*(pXPB - pXLocation) + r2*c2*(gb[0] - pXLocation); //x-component of the new velocity
+                    r1 = Math.random();
+                    r2 = Math.random();
+                    var newYVelocity = w*pYVelocity + r1*c1*(pYPB - pYLocation) + r2*c2*(gb[1] - pYLocation); //y-component of the new velocity
+                    //new location is calculated by adding the current location and new velocity vectors:
+                    //new location = current location + new velocity
+                    var newXLocation = pXLocation + newXVelocity; //x-component of the new location
+                    var newYLocation = pYLocation + newYVelocity; //y-component of the new location
+
+                    var fValue = getFunctionValue(newXLocation, newYLocation); //gets the function value at the new location
+                    p.location = [newXLocation, newYLocation]; //updates the location of the particle
+                    p.velocity = [newXVelocity, newYVelocity]; //updates the velocity of the particle
+                    //if the function value at the new location is lower than the current personal best -> personal best is updated
+                    if(fValue < pPBValue)
+                    {
+                        p.pb = [newXLocation, newYLocation, fValue];
+                    }
+                    //if the function value at the new location is lower than the current global best -> global best is updated
+                    if(fValue < gb[2])
+                    {
+                        gb = [newXLocation, newYLocation, fValue];
+                    }
+                }
+            }
+
+            //visualizes the function
+            function visualizeFunction(c)
+            {
+                var pixelSize = 5; //size of each data point
+                var fMinMax = findMinMax();
+                var fMin = fMinMax[0]; //minimum function value
+                var fMax = fMinMax[1]; //maximum function value
+                //xMid and yMid are used to shift the input space to fit the canvas
+                var xMid = (xMax - xMin)/2; //x-component of the average input value
+                var yMid = (yMax - yMin)/2; //y-component of the average input value
+
+                var ctx = c.getContext("2d");
+                ctx.beginPath();
+                //goes through all the input values, scales and shifts them to fit the canvas 
+                //and colors the pixels with corresponding colors 
+                for(var y = yMin; y <= yMax; y += ySampleSize)
+                {
+                    for(var x = xMin; x <= xMax; x += xSampleSize)
+                    {
+                        var color = getColor(getFunctionValue(x, y), fMin, fMax);
+                        ctx.fillStyle = color;
+                        ctx.fillRect((x + xMid)*xCanvasScale, (y + yMid)*yCanvasScale, pixelSize, pixelSize);
+                    }
+                }
+                ctx.stroke();
+            }
+
+            //particles are visualized as squares in the canvas
+            //goes through all the particles and draws them at their current location
+            function visualizeParticles(c, particles)
+            {
+                var ctx = c.getContext("2d");
+                var xMid = (xMax - xMin)/2;
+                var yMid = (yMax - yMin)/2;
+                for(p of particles)
+                {
+                    var x = p.location[0];
+                    var y = p.location[1];
+                    ctx.strokeStyle = "rgb(" + 0 + "," + 0 + "," + 0 + ")";
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.rect(((x + xMid)*xCanvasScale - 5), ((y + yMid)*yCanvasScale - 5), 10, 10);
+                    ctx.stroke();
+                }
+            }
+
+            //returns a vector with randomized x and y values
+            function rndVector()
+            {
+                return [Math.random() * (xMax - xMin) + xMin, Math.random() * (yMax - yMin) + yMin];
+            }
+
+            //calculates the magnitude of the vector
+            function calcMagnitude(x, y)
+            {
+                return Math.sqrt(x*x + y*y);
+            }
+
+            //normalizes the vector
+            function normalizeVector(x, y)
+            {
+                var mag = Math.sqrt(x*x + y*y);
+                return [x/mag, y/mag];
+            }
+
+            function initCanvas(id, w, h)
+            {
+                var c = document.getElementById(id);
+				var ctx = c.getContext("2d");
+				ctx.canvas.width=w;
+				ctx.canvas.height=h;
+				return c;
+            }
+
+            function clearCanvas(c)
+            {
+                var ctx = c.getContext("2d");
+                ctx.clearRect(0, 0, c.width, c.height);
+            }
+        </script>
+    </head>
+    <body onload="main()">
+        <canvas id="canvas1"></canvas>
+    </body>
+</html>
