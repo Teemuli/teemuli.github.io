@@ -1,0 +1,193 @@
+<html>
+    <head>
+        <script>
+            const timeStep = 250;
+            var a = 0.01; //alpha value
+
+            //colors represent classes
+            class Vector
+            {
+                constructor(location, color, asd)
+                {
+                    this.location = location;
+                    this.color = color;
+                    this.asd = asd;
+                }
+            }
+
+            function main()
+            {  
+                //creates a randomized data set with 2 attributes
+                var data = rndDataSet();
+                var w = data[1];
+                var h = data[2];
+                data = data[0];
+                var neuronCount = 5; 
+                /*
+                    the maximum amount of classes is 5 atm, can be increased 
+                    by adding more colors to the colors table in the initNeurons function
+                */
+                var neurons = initNeurons(neuronCount, w, h);
+                var c = initCanvas("canvas1", w + 20, h + 20);
+
+                setInterval(function()
+                {
+                    clearCanvas(c);
+                    drawBorder(c);
+                    //visualizes the values in the data array
+                    visualizeValues(c, data);
+                    //visualizes the neurons
+                    visualizeNeurons(c, neurons);
+                    //updates the neuron's locations
+                    updateNeurons(data, neurons);
+                }, timeStep);
+            }
+            
+            function updateNeurons(data, neurons)
+            {
+                for(var d of data)
+                {
+                    var dx = d.location[0];
+                    var dy = d.location[1];
+                    var minDistance = 10000;
+                    var winNeuron;
+                    //finds the closest neuron "winNeuron"
+                    for(var n of neurons)
+                    {
+                        var nx = n.location[0];
+                        var ny = n.location[1];
+                        var distance = calcDistance(dx, dy, nx, ny);
+                        if(distance <= minDistance)
+                        {
+                            minDistance = distance;
+                            winNeuron = n;
+                        }
+                    }
+                    d.color = winNeuron.color;
+                    var nx = winNeuron.location[0];
+                    var ny = winNeuron.location[1];
+                    /*
+                        var dx = value of attribute x for the current data point
+                        var dy = value of attribute y for the current data point
+                        var nx = current x-coordinate of the winning neutron
+                        var ny = current y-coordinate of the winning neutron
+                        var a = learning restraint, scales the magnitude at which the winning neuron is moved each timestep
+                        var newX = new x-coordinate of the winning neutron
+                        var newY = new x-coordinate of the winning neutron
+                    */
+                    var newX = nx + a*(dx - nx);
+                    var newY = ny + a*(dy - ny);
+                    winNeuron.location = [newX, newY];
+                }
+            }
+
+            //calculates the euclidean distance between 2 points
+            function calcDistance(x1, y1, x2, y2)
+            {
+                return Math.sqrt(Math.pow(x2-x1, 2) + Math.pow(y2-y1, 2))
+            }
+
+            function initNeurons(n, xMax, yMax)
+            {
+                var neuronArray = [];
+                //this colors array limits the amount of classes, add more colors to add classes
+                var colors = ["#eb4034", "#e2eb34", "#40eb34", "#34bdeb", "#eb34e2"];
+                for(var i = 0; i < n; i++)
+                {
+                    //inital positions of the neurons are randomized
+                    var neuron = new Vector(rndValueVector(xMax - 20, yMax - 20), colors[i], [0, 0]);
+                    neuronArray.push(neuron);
+                }
+                console.log(neuronArray);
+                return neuronArray;
+            }
+
+            function rndValueVector(xMax, yMax)
+            {
+                return [Math.random() * xMax + 20, Math.random() * yMax + 20];
+            }
+
+            function rndDataSet()
+            {
+                var dataSize = 100;
+                var data = [];
+                var xMax = 0;
+                var yMax = 0;
+                for(var i = 0; i < dataSize; i++)
+                {
+                    var location = rndValueVector(400, 400);
+                    if(location[0] > xMax)
+                    {
+                        xMax = location[0];
+                    }
+                    if(location[1] > yMax)
+                    {
+                        yMax = location[1];
+                    }
+                    data.push(new Vector(location, "#000000"));
+                }
+                return [data, xMax, yMax];
+            }
+
+            function visualizeValues(c, data)
+            {
+                var ctx = c.getContext("2d");
+                for(d of data)
+                {
+                    ctx.strokeStyle = d.color;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(d.location[0], d.location[1], 5, 0, 2 * Math.PI);
+                    ctx.stroke();
+                }
+            }
+
+            function visualizeNeurons(c, neurons)
+            {
+                var ctx = c.getContext("2d");
+                for(n of neurons)
+                {
+                    var x = n.location[0];
+                    var y = n.location[1];
+                    ctx.strokeStyle = n.color;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.rect(x - 5, y - 5, 10, 10);
+                    ctx.stroke();
+                }
+            }
+
+            function drawBorder(c)
+            {
+                var ctx = c.getContext("2d");
+                ctx.strokeStyle = "#000000";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, c.height);
+                ctx.lineTo(c.width, c.height);
+                ctx.lineTo(c.width, 0);
+                ctx.lineTo(0, 0);
+                ctx.stroke();
+            }
+
+            function initCanvas(id, w, h)
+            {
+                var c = document.getElementById(id);
+				var ctx = c.getContext("2d");
+				ctx.canvas.width=w;
+				ctx.canvas.height=h;
+				return c;
+            }
+
+            function clearCanvas(c)
+            {
+                var ctx = c.getContext("2d");
+                ctx.clearRect(0, 0, c.width, c.height);
+            }
+        </script>
+    </head>
+    <body onload="main()">
+        <canvas id="canvas1"></canvas>
+    </body>
+</html>

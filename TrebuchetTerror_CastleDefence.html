@@ -1,0 +1,422 @@
+<html>
+    <head>
+        <script>
+            const timeStep = 30; //the length of a frame in milliseconds
+            const timeScale = timeStep/1000; //is used to scale the physics values (velocity and acceleration) to fit the frame rate
+            const g = 9.81 * timeScale; //the strength of acceleration, used to simulate gravity
+            var time = 0; //time passed
+            var quiver = []; //contains the projectile objects
+            var ball = []; //contains the projectile objects
+            var points = 0; //number of boulder/balls blocked
+            var castleHealth = 100; //maximum health of the castle
+
+            class Projectile
+            {
+                /*
+                var i = position of the object in quiver or ball array
+                var type = type of the projectile, "arrow" or "ball"
+                var location = location of the projectile, [horizontal position, vertical position]
+                var velocity = velocity of the projectile, [horizontal velocity, vertical velocity]
+                var radius = radius (if ball) or length (if arrow) of the projectile
+                var collision = true if projectile has collisioned with another projectile
+                */
+                constructor(i, type, location, velocity, radius)
+                {
+                    this.i = i;
+                    this.type = type;
+					this.location = location;
+					this.velocity = velocity;
+                    this.radius = radius;
+                    this.collision = false;
+				}
+
+                //calls the corresponding draw function depending on the type
+                drawProjectile(c)
+                {
+                    var x = this.location[0];
+                    var y = this.location[1];
+                    switch(this.type)
+                    {
+                        case "arrow":                    
+                            drawArrow(x, y, this.velocity[0], this.velocity[1], this.radius, c);  
+                            break;
+
+                        case "ball":                          
+                            drawBall(x, y, c, this.radius/2, "#a19494", this.radius);
+                            drawBall(x, y, c, this.radius, "#000000", 1);
+                            break;
+                    } 
+                }
+
+                /*
+                Updates the projectiles location. Also checks if the projectile has left the canvas or hit the castle.
+                If the projectile has left the canvas or hit the castle, the projectile is removed.
+                */
+                updateLocation(c)
+                {
+                    var x = this.location[0];
+                    var y = this.location[1];
+                    if(this.type == "arrow" && (x > c.width + 20 || y > c.height + 20))
+                    {
+                        quiver[this.i] = null;
+                    }
+                    else if(this.type == "ball" && ((x < 120 && y > c.height - 100) || y > c.height + 10))
+                    {
+                        //if the projectile has hit the castle, castle health is reduced
+                        if(x < 120 && x > 0 && y > c.height - 100 && y < c.height - 20)
+                        {
+                            castleHealth -= 10;
+                        }
+                        ball[this.i] = null;
+                    }
+                    else
+                    {
+                        this.location = calcLocation(x, y, this.velocity[0], this.velocity[1]);
+                        this.updateVelocity();
+                    }
+                    
+                }
+
+                //adds the acceleration
+                updateVelocity()
+                {
+                    this.velocity[1] -= g;
+                }
+            }
+
+            function main()
+            {
+                var c = document.getElementById("canvas1");
+                var difficulty = 70 //how often a new ball is thrown, lower value = higer rate, higher value = lower rate
+                var roundLength = 200 * timeStep; //how often difficulty is increased (difficulty value is lowered)
+                var trebuchetState = 0; //state of the trebuchet animation, 0 = ready to launch, 1 = mid launch, 2 = after launch
+                var timer; //is used to schedule future processes
+                initializeArrowArray();
+                initializeBallArray();
+                setInterval(function()
+                {
+                    clearCanvas(c);
+                    drawInfo(c);
+                    drawBorder(c);
+                    drawCastle(c);
+                    drawTrebuchet(c, trebuchetState);
+                    
+                    //if castle health is 0, the game ends
+                    if(castleHealth <= 0)
+                    {
+                        var ctx = c.getContext("2d");
+                        ctx.font = "20px Georgia"
+                        var survivalTime = Math.floor(time/1000/24);
+                        var day = " days!"
+                        if(survivalTime <= 1)
+                        {
+                            day = " day..."
+                        }
+                        ctx.fillText("You held the castle for " + survivalTime + day, c.width/2 - 150, c.height/2);
+                        return;
+                    }
+                    hitDetection();
+                    processProjectiles(c);
+
+                    //every timeStep * difficulty milliseconds a new ball is created
+                    if((time + timeStep*10) % (timeStep*difficulty) == 0)
+                    {
+                        newBall(c);
+                        trebuchetState = 1;
+                        timer = time + 5*timeStep;
+                    }
+
+                    /*
+                    Every roundLength milliseconds the value of difficulty is lowered (actual difficulty increases),
+                    the rate at which a new ball is thrown increases.
+                    */
+                    if((time + timeStep*10) % roundLength == 0 && difficulty > 5)
+                    {
+                        difficulty--;
+                    }
+
+                    //this animates the trebuchet
+                    if(time == timer && trebuchetState > 0)
+                    {
+                        trebuchetState++;
+                        timer = time + 5*timeStep;
+                        if(trebuchetState >= 3)
+                        {
+                            trebuchetState = 0;
+                        }
+                    }
+                    time += timeStep;
+                }, timeStep);
+            }
+
+            //iterates through the projectile arrays, draws them and updates their locations
+            function processProjectiles(c)
+            {
+                for(var arrow of quiver)
+                {
+                    if(arrow != null)
+                    {
+                        arrow.drawProjectile(c);
+                        arrow.updateLocation(c);
+                    }
+                }
+                for(var b of ball)
+                {
+                    if(b != null)
+                    {
+                        b.drawProjectile(c);
+                        b.updateLocation(c);
+                    }
+                }
+            }
+
+            /*
+            Checks if any of the arrows and balls have collided, compares every arrow's location to every ball's location.
+            If an arrow is within an balls radius, they have collided and a new combined velocity is calculated for both.
+            */
+            function hitDetection()
+            {
+                for(var arrow of quiver)
+                {
+                    if(arrow != null && !arrow.collision)
+                    {
+                        var ax = arrow.location[0];
+                        var ay = arrow.location[1];
+                        for(var b of ball)
+                        {
+                            if(b != null && !b.collision)
+                            {
+                                var distance = calcDistance(ax, ay, b.location[0], b.location[1])
+                                if(distance < b.radius + 4)
+                                {
+                                    calcCollition(arrow, b);
+                                    points++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            //calculates a velocity for the arrow based on the mouse pointer location
+            function shootArrow(e)
+            {
+                var c = document.getElementById("canvas1");
+                var xPointer = e.clientX;
+                var yPointer = e.clientY;
+                var velocity = [xPointer * timeScale * 1.25, (c.height - yPointer) * timeScale * 1.25];
+                newArrow(c, velocity);
+            }
+
+            //initializes the arrow array by filling it with null cells
+            function initializeArrowArray()
+            {
+                var quiverSize = 5;
+                for(var i = 0; i < quiverSize; i++)
+                {
+                    quiver.push(null);
+                }
+            }
+
+            //initializes the ball array by filling it with null cells
+            function initializeBallArray()
+            {
+                for(var i = 0; i < 7; i++)
+                {
+                    ball.push(null);
+                }
+            }
+
+            /*
+            Iterates through the ball array and creates a new projectile in an empty (null) index.
+            The balls velocity and vertical starting position are randomized.
+            */
+            function newBall(c)
+            {
+                var vx = (Math.random()*50 + 175);
+                var vy = (Math.random()*125 + 350);
+                var y = c.height - Math.random()* 100;
+                for(var i = 0; i < ball.length; i++)
+                {
+                    if(ball[i] == null)
+                    {
+                        ball[i] = new Projectile(i, "ball", [c.width, y], [-vx*timeScale, vy*timeScale], 10);
+                        return;
+                    }
+                }
+            }
+
+            /*
+            Iterates through the arrow array and creates a new projectile in an empty (null) index.
+            */
+            function newArrow(c, v)
+            {
+                for(var i = 0; i < quiver.length; i++)
+                {
+                    if(quiver[i] == null)
+                    {
+                        quiver[i] = new Projectile(i, "arrow", [35, c.height - 135], v, 20);
+                        return;
+                    }
+                }
+            }
+            
+            //draws the arrow
+            function drawArrow(x, y, i, j, len, c)
+            {
+                var ctx = c.getContext("2d");
+                ctx.strokeStyle = "#43523c";
+                ctx.lineWidth = 2;
+                var nVector = normalizeVector(i, j);
+                var ni = nVector[0];
+                var nj = nVector[1];
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x - ni*len, y + nj*len);
+                ctx.stroke();
+            }
+
+            //draws the ball
+            function drawBall(xCenter, yCenter, c, radius, color, width)
+            {
+                var ctx = c.getContext("2d");
+				ctx.beginPath();
+				ctx.moveTo(xCenter + radius, yCenter);
+				for(var i = Math.PI/32; i <= Math.PI*2; i += Math.PI/32)
+                {
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = width;
+					var x = xCenter + Math.cos(i) * radius;
+					var y = yCenter + Math.sin(i) * radius;
+					ctx.lineTo(x, y);
+				}
+				var x = xCenter + Math.cos(0) * radius;
+				var y = yCenter + Math.sin(0) * radius;
+				ctx.lineTo(x, y);
+				ctx.stroke();
+            }
+
+            //draws the image of the castle corresponding to the current castle health
+            function drawCastle(c)
+            {
+                var ctx = c.getContext("2d");
+                var castle;
+
+                if(castleHealth > 75)
+                    castle = document.getElementById("castle100");
+                else if(castleHealth > 50)
+                    castle = document.getElementById("castle75");
+                else if(castleHealth > 25)
+                    castle = document.getElementById("castle50");
+                else if(castleHealth > 0)
+                    castle = document.getElementById("castle25");
+                else
+                    castle = document.getElementById("castle0");
+
+                ctx.drawImage(castle, 5, c.height - 155, 130, c.height- 250);
+            }
+
+            //draws the image of the trebuchet corresponding to the current trebuchet state
+            function drawTrebuchet(c, state)
+            {
+                var ctx = c.getContext("2d");
+                var trebuchet;
+                switch(state)
+                {
+                    case 0:
+                        trebuchet = document.getElementById("treb1");
+                        break;
+                    case 1:
+                        trebuchet = document.getElementById("treb2");
+                        break;
+                    case 2:
+                        trebuchet = document.getElementById("treb3");
+                        break;
+                }
+                ctx.drawImage(trebuchet, c.width - 105, c.height - 105, c.width - 500, c.height- 300);
+            }
+
+            //draws the information about the current health of the castle and the number of balls blocked
+            function drawInfo(c)
+            {
+                var ctx = c.getContext("2d");
+                ctx.font = "20px Georgia"
+                ctx.fillText("Castle health: ", 10, 25);
+                ctx.fillText(castleHealth + "/100", 135, 25);
+                ctx.fillText("Boulders blocked: ", 10, 55);
+                ctx.fillText(points, 170, 55);
+            }
+
+            //draws a border around the canvas
+            function drawBorder(c)
+            {
+                var ctx = c.getContext("2d");
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, c.height);
+                ctx.lineTo(c.width, c.height);
+                ctx.lineTo(c.width, 0);
+                ctx.lineTo(0, 0);
+                ctx.stroke();
+            }
+
+            //clears the canvas
+            function clearCanvas(c)
+            {
+                var ctx = c.getContext("2d");
+                ctx.clearRect(0, 0, c.width, c.height);
+            }
+
+            //calculates a new velocity for collided projectiles, the new velocity is calculated by summing up the velocities
+            function calcCollition(a, b)
+            {
+                var newVelocity = [a.velocity[0] + b.velocity[0], a.velocity[1] + b.velocity[1]]
+                a.velocity = newVelocity;
+                a.collision = true;
+                b.velocity = newVelocity;
+                b.collision = true;
+            }
+
+            //calculates the distance between two points
+            function calcDistance(x1, y1, x2, y2)
+            {
+                return Math.sqrt(Math.pow(x2-x1, 2) + Math.pow(y2-y1, 2))
+            }
+
+            //calculates a new position based on the projectiles velocity and current position
+            function calcLocation(x, y, i, j)
+            {
+                return [x + i, y - j];
+            }
+
+            //calculates the vectors magnitude
+            function calcMagnitude(i, j)
+            {
+                return Math.sqrt(i*i + j*j);
+            }
+
+            //normalizes the vector
+            function normalizeVector(i, j)
+            {
+                var mag = calcMagnitude(i, j);
+                return [i/mag, j/mag];
+            }
+
+        </script>
+    </head>
+    <body onload="main()">
+        <div>
+            <canvas id="canvas1" onclick="shootArrow(event)" width="600" height="400"></canvas>
+        </div>
+        <div>
+            <image id="castle100" src="https://i.imgur.com/1Srx6TT.png" style="visibility: hidden"></image>
+            <image id="castle75" src="https://i.imgur.com/bGfMOOU.png" style="visibility: hidden"></image>
+            <image id="castle50" src="https://i.imgur.com/AI2l2AA.png" style="visibility: hidden"></image>
+            <image id="castle25" src="https://i.imgur.com/tfc21dK.png" style="visibility: hidden"></image>
+            <image id="castle0" src="https://i.imgur.com/LVs5QBG.png" style="visibility: hidden"></image>
+            <image id="treb1" src="https://i.imgur.com/oHUlF9f.png" style="visibility: hidden"></image>
+            <image id="treb2" src="https://i.imgur.com/twtU6Ud.png" style="visibility: hidden"></image>
+            <image id="treb3" src="https://i.imgur.com/aL2nC55.png" style="visibility: hidden"></image>
+        </div>
+    </body>
+</html>
